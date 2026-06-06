@@ -1,4 +1,5 @@
 import QuestionsList from "./questions-list";
+import { getPoll } from "@/lib/polls";
 import { getQuestionsPage } from "@/lib/questions";
 
 // Render on every request (don't cache/prerender) so new questions show up.
@@ -8,6 +9,11 @@ const PAGE_SIZE = 10;
 
 // Server component — runs only on the server, awaits the data, renders to HTML.
 export default async function Page() {
+  console.log("Calling getPoll...");
+  const pollData = await getPoll(1);
+  console.log("Poll Data:", pollData);
+
+  console.log(pollData);
   const { questions, hasMore } = await getQuestionsPage(0, PAGE_SIZE);
 
   return (
