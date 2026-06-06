@@ -11,7 +11,8 @@ drop function if exists increment_question_votes(uuid);
 -- ── questions (Feature 1) ────────────────────────────────────────────────────
 create table questions (
   id          uuid primary key default gen_random_uuid(),
-  body        text not null,
+  title       text not null,
+  content     text not null,
   author      text,
   created_at  timestamptz default now()
 );
@@ -23,19 +24,36 @@ create table votes (
   id           uuid primary key default gen_random_uuid(),
   question_id  uuid not null references questions(id) on delete cascade,
   voter_id     text not null,
+  value        integer not null default 1,
   created_at   timestamptz default now(),
   unique (question_id, voter_id)
 );
 
 create index votes_question_id_idx on votes (question_id);
+create table poll_options (
+  id          uuid primary key default gen_random_uuid(),
+  question_id uuid not null references questions(id) on delete cascade,
+  text        text not null,
+  created_at  timestamptz default now()
+);
 
+create table poll_votes (
+  id          uuid primary key default gen_random_uuid(),
+  question_id uuid not null references questions(id) on delete cascade,
+  option_id   uuid not null references poll_options(id) on delete cascade,
+  voter_id    text not null,
+  created_at  timestamptz default now(),
+  unique (question_id, voter_id)
+);
+
+create index poll_votes_question_id_idx on poll_votes (question_id);
 -- ── full-text search index (Feature 5) ───────────────────────────────────────
 -- GIN = Generalized INverted index: the word → documents map behind search.
-create index questions_fts_idx on questions using gin (to_tsvector('english', body));
+create index questions_fts_idx on questions using gin (to_tsvector('english', title || ' ' || content));
 
 -- ── seed (~25 questions, spaced out in time so ordering is stable) ───────────
-insert into questions (body, author, created_at)
-select body, author, now() - (n || ' minutes')::interval
+insert into questions (title, content, author, created_at)
+select body, author, author, now() - (n || ' minutes')::interval
 from (
   values
     (1,  'How do I deploy to Vercel?', 'Priya'),

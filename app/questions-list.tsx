@@ -3,11 +3,18 @@
 import { useState, useEffect } from "react";
 import { getVoterId } from "@/lib/voter";
 
+type PollOption = {
+  id: string;
+  text: string;
+  votes: number;
+};
+
 type Question = {
   id: string | number;
   title: string;
   content: string;
   votes: number;
+  options?: PollOption[];
 };
 
 export default function QuestionsList({
@@ -19,6 +26,7 @@ export default function QuestionsList({
 }) {
   const [questions, setQuestions] = useState(initialQuestions);
   const [draft, setDraft] = useState("");
+  const [optionInputs, setOptionInputs] = useState(["", ""]);
   const [query, setQuery] = useState("");
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, setLoading] = useState(false);
@@ -46,6 +54,10 @@ export default function QuestionsList({
   async function submit() {
     if (!draft.trim()) return;
 
+    const options = optionInputs
+      .map((opt) => opt.trim())
+      .filter(Boolean);
+
     const res = await fetch("/api/questions", {
       method: "POST",
       headers: {
@@ -54,6 +66,7 @@ export default function QuestionsList({
       body: JSON.stringify({
         title: draft,
         content: draft,
+        options,
       }),
     });
 
@@ -63,22 +76,32 @@ export default function QuestionsList({
       {
         ...created,
         votes: 0,
+        options:
+          created.options?.map((option: any) => ({
+            ...option,
+            votes: 0,
+          })) ?? [],
       },
       ...qs,
     ]);
 
     setDraft("");
+    setOptionInputs(["", ""]);
   }
 
-  async function upvote(id: string | number) {
-    setQuestions((qs) =>
-      qs.map((q) =>
-        String(q.id) === String(id)
-          ? { ...q, votes: q.votes + 1 }
-          : q
+  function updateOptionInput(index: number, value: string) {
+    setOptionInputs((inputs) =>
+      inputs.map((item, idx) =>
+        idx === index ? value : item
       )
     );
+  }
 
+  function addOptionInput() {
+    setOptionInputs((inputs) => [...inputs, ""]);
+  }
+
+  async function vote(id: string | number, direction: 1 | -1) {
     const res = await fetch(`/api/questions/${id}/vote`, {
       method: "POST",
       headers: {
@@ -86,6 +109,7 @@ export default function QuestionsList({
       },
       body: JSON.stringify({
         voterId: getVoterId(),
+        vote: direction,
       }),
     });
 
@@ -94,15 +118,66 @@ export default function QuestionsList({
     const body = await res.json();
     console.log("Vote response:", body);
 
-    if (!res.ok) {
+    if (res.ok) {
       setQuestions((qs) =>
         qs.map((q) =>
           String(q.id) === String(id)
-            ? { ...q, votes: q.votes - 1 }
+            ? { ...q, votes: body.votes ?? q.votes }
             : q
         )
       );
+      return;
     }
+
+    console.error("Vote failed", body);
+  }
+
+  async function voteOption(
+    questionId: string | number,
+    optionId: string
+  ) {
+    const res = await fetch(
+      `/api/questions/${questionId}/option-vote`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          voterId: getVoterId(),
+          optionId,
+        }),
+      }
+    );
+
+    const body = await res.json();
+
+    if (!res.ok) {
+      console.error("Option vote failed", body);
+      return;
+    }
+
+    setQuestions((qs) =>
+      qs.map((q) =>
+        String(q.id) === String(questionId)
+          ? {
+              ...q,
+              options: q.options?.map((option) => ({
+                ...option,
+                votes:
+                  body.optionCounts?.[option.id] ?? option.votes,
+              })),
+              votes:
+                q.options?.reduce(
+                  (total, opt) =>
+                    total +
+                    (body.optionCounts?.[opt.id] ?? opt.votes),
+                  0
+                ) ?? q.votes,
+            }
+          : q
+      )
+    );
   }
 
   async function loadMore() {
@@ -144,6 +219,29 @@ export default function QuestionsList({
         </button>
       </div>
 
+      <div className="space-y-2">
+        <p className="text-sm text-gray-500">
+          Add answer options to create a poll question.
+        </p>
+        {optionInputs.map((option, index) => (
+          <input
+            key={index}
+            value={option}
+            onChange={(e) =>
+              updateOptionInput(index, e.target.value)
+            }
+            placeholder={`Option ${index + 1}`}
+            className="w-full rounded-md border px-3 py-2"
+          />
+        ))}
+        <button
+          onClick={addOptionInput}
+          className="rounded-md border px-4 py-2"
+        >
+          Add option
+        </button>
+      </div>
+
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -155,19 +253,47 @@ export default function QuestionsList({
         {questions.map((q) => (
           <li
             key={q.id}
-            className="flex items-center gap-3 rounded-lg border p-3"
+            className="rounded-lg border p-3"
           >
-            <button
-              onClick={() => upvote(q.id)}
-              className="rounded-md border px-3 py-1 font-mono"
-            >
-              ▲ {q.votes}
-            </button>
-
-            <div>
-              <h3 className="font-semibold">{q.title}</h3>
-              <p>{q.content}</p>
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <h3 className="font-semibold">{q.title}</h3>
+                <p>{q.content}</p>
+              </div>
+              <div className="text-right text-sm text-gray-500">
+                Total votes: {q.votes}
+              </div>
             </div>
+
+            {q.options && q.options.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                {q.options.map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => voteOption(q.id, option.id)}
+                    className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left"
+                  >
+                    <span>{option.text}</span>
+                    <span className="font-mono">{option.votes}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => vote(q.id, 1)}
+                  className="rounded-md border px-3 py-1 font-mono"
+                >
+                  ▲
+                </button>
+                <button
+                  onClick={() => vote(q.id, -1)}
+                  className="rounded-md border px-3 py-1 font-mono"
+                >
+                  ▼
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ul>

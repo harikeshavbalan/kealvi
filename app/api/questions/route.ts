@@ -28,7 +28,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { title, content } = await req.json();
+  const { title, content, options } = await req.json();
 
   const { data, error } = await supabase
     .from("questions")
@@ -44,6 +44,43 @@ export async function POST(req: Request) {
       { error: error.message },
       { status: 500 }
     );
+  }
+
+  if (Array.isArray(options) && options.length > 0) {
+    const formattedOptions = options
+      .filter((text: string) => typeof text === "string" && text.trim())
+      .map((text: string) => ({
+        question_id: data.id,
+        text: text.trim(),
+      }));
+
+    const { error: optionsError } = await supabase
+      .from("poll_options")
+      .insert(formattedOptions);
+
+    if (optionsError) {
+      return Response.json(
+        { error: optionsError.message },
+        { status: 500 }
+      );
+    }
+
+    const { data: insertedOptions, error: fetchError } = await supabase
+      .from("poll_options")
+      .select("id, text")
+      .eq("question_id", data.id);
+
+    if (fetchError) {
+      return Response.json(
+        { error: fetchError.message },
+        { status: 500 }
+      );
+    }
+
+    return Response.json({
+      ...data,
+      options: insertedOptions,
+    });
   }
 
   return Response.json(data);
