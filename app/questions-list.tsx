@@ -647,8 +647,9 @@ export default function QuestionsList({
                     <button
                       onClick={() => toggleBookmark(q)}
                       className="rounded-md border px-2 py-1 text-xs"
+                      aria-label={isBookmarked ? "Starred question" : "Star question"}
                     >
-                      {isBookmarked ? "Bookmarked" : "Bookmark"}
+                      {isBookmarked ? "★" : "☆"}
                     </button>
                   </div>
                 </div>
