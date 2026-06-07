@@ -1,9 +1,9 @@
 import { supabase } from "@/lib/supabase";
 
-type PollOption = {
-  id: string;
-  text: string;
+type DashboardStats = {
+  questions: number;
   votes: number;
+  polls: number;
 };
 
 async function getVoteTotal(questionId: string | number) {
@@ -52,15 +52,47 @@ async function getPollOptions(questionId: string | number) {
   }));
 }
 
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const [
+    { data: questionRows, error: questionsError },
+    { data: voteRows, error: voteError },
+    { data: pollVoteRows, error: pollVoteError },
+    { data: pollOptionRows, error: pollOptionsError },
+  ] = await Promise.all([
+    supabase.from("questions").select("id"),
+    supabase.from("votes").select("value"),
+    supabase.from("poll_votes").select("id"),
+    supabase.from("poll_options").select("question_id"),
+  ]);
+
+  if (questionsError) throw new Error(questionsError.message);
+  if (voteError) throw new Error(voteError.message);
+  if (pollVoteError) throw new Error(pollVoteError.message);
+  if (pollOptionsError) throw new Error(pollOptionsError.message);
+
+  const totalVotes = (voteRows ?? []).reduce(
+    (sum, row) => sum + (row.value ?? 0),
+    0
+  ) + (pollVoteRows ?? []).length;
+
+  const pollQuestionCount = new Set(
+    (pollOptionRows ?? []).map((row) => row.question_id)
+  ).size;
+
+  return {
+    questions: (questionRows ?? []).length,
+    votes: totalVotes,
+    polls: pollQuestionCount,
+  };
+}
+
 export async function getQuestionsPage(
   offset: number,
   limit: number
 ) {
   const { data, error } = await supabase
     .from("questions")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit);
+    .select("*");
 
   if (error) throw new Error(error.message);
 
@@ -71,22 +103,23 @@ export async function getQuestionsPage(
         ? options.reduce((total, option) => total + option.votes, 0)
         : await getVoteTotal(q.id);
 
-      console.log("Question:", q.id);
-      console.log("Vote Count:", votes);
-
       return {
         id: q.id,
         title: q.title,
         content: q.content,
+        author: q.author,
         votes,
+        createdAt: q.created_at,
         options,
       };
     })
   );
 
+  const sorted = questions.sort((a, b) => b.votes - a.votes);
+
   return {
-    questions: questions.slice(0, limit),
-    hasMore: questions.length > limit,
+    questions: sorted.slice(offset, offset + limit),
+    hasMore: sorted.length > offset + limit,
   };
 }
 
@@ -97,8 +130,7 @@ export async function searchQuestions(
   const { data, error } = await supabase
     .from("questions")
     .select("*")
-    .ilike("title", `%${q}%`)
-    .limit(limit);
+    .ilike("title", `%${q}%`);
 
   if (error) throw new Error(error.message);
 
@@ -109,18 +141,18 @@ export async function searchQuestions(
         ? options.reduce((total, option) => total + option.votes, 0)
         : await getVoteTotal(row.id);
 
-      console.log("Search Question:", row.id);
-      console.log("Vote Count:", votes);
-
       return {
         id: row.id,
         title: row.title,
         content: row.content,
+        author: row.author,
         votes,
+        createdAt: row.created_at,
         options,
       };
     })
   );
 
-  return questions;
+  return questions.sort((a, b) => b.votes - a.votes).slice(0, limit);
 }
+

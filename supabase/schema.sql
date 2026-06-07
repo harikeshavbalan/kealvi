@@ -17,6 +17,13 @@ create table questions (
   created_at  timestamptz default now()
 );
 
+create table users (
+  id            uuid primary key default gen_random_uuid(),
+  userid        text not null unique,
+  password_hash text not null,
+  created_at    timestamptz default now()
+);
+
 -- ── votes (Feature 3) ────────────────────────────────────────────────────────
 -- one row per vote; the FK guarantees a vote points at a real question, and
 -- the unique constraint enforces one vote per voter per question.
@@ -47,6 +54,19 @@ create table poll_votes (
 );
 
 create index poll_votes_question_id_idx on poll_votes (question_id);
+
+-- ── bookmarks ──────────────────────────────────────────────────────────
+-- one bookmark per (user, question)
+create table bookmarks (
+  question_id uuid not null references questions(id) on delete cascade,
+  user_id     text not null,
+  created_at  timestamptz default now(),
+  unique (question_id, user_id)
+);
+
+create index bookmarks_user_id_idx on bookmarks (user_id);
+create index bookmarks_question_id_idx on bookmarks (question_id);
+
 -- ── full-text search index (Feature 5) ───────────────────────────────────────
 -- GIN = Generalized INverted index: the word → documents map behind search.
 create index questions_fts_idx on questions using gin (to_tsvector('english', title || ' ' || content));

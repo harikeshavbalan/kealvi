@@ -7,33 +7,49 @@ export async function POST(
   try {
     const { id: questionId } = await params;
     const { voterId, vote } = await req.json();
-    const value = vote === -1 ? -1 : 1;
 
-    const insertResult = await supabase.from("votes").insert({
-      question_id: questionId,
-      voter_id: voterId,
-      value,
-    });
+    if (vote === 0) {
+      const { error: deleteError } = await supabase
+        .from("votes")
+        .delete()
+        .eq("question_id", questionId)
+        .eq("voter_id", voterId);
 
-    if (insertResult.error) {
-      if (insertResult.error.code === "23505") {
-        const { error: updateError } = await supabase
-          .from("votes")
-          .update({ value })
-          .eq("question_id", questionId)
-          .eq("voter_id", voterId);
+      if (deleteError) {
+        return Response.json(
+          { error: deleteError.message },
+          { status: 500 }
+        );
+      }
+    } else {
+      const value = vote === -1 ? -1 : 1;
 
-        if (updateError) {
+      const insertResult = await supabase.from("votes").insert({
+        question_id: questionId,
+        voter_id: voterId,
+        value,
+      });
+
+      if (insertResult.error) {
+        if (insertResult.error.code === "23505") {
+          const { error: updateError } = await supabase
+            .from("votes")
+            .update({ value })
+            .eq("question_id", questionId)
+            .eq("voter_id", voterId);
+
+          if (updateError) {
+            return Response.json(
+              { error: updateError.message },
+              { status: 500 }
+            );
+          }
+        } else {
           return Response.json(
-            { error: updateError.message },
+            { error: insertResult.error.message },
             { status: 500 }
           );
         }
-      } else {
-        return Response.json(
-          { error: insertResult.error.message },
-          { status: 500 }
-        );
       }
     }
 

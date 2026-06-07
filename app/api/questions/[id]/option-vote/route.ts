@@ -8,31 +8,46 @@ export async function POST(
     const { id: questionId } = await params;
     const { voterId, optionId } = await req.json();
 
-    const insertResult = await supabase.from("poll_votes").insert({
-      question_id: questionId,
-      option_id: optionId,
-      voter_id: voterId,
-    });
+    if (optionId == null) {
+      const { error: deleteError } = await supabase
+        .from("poll_votes")
+        .delete()
+        .eq("question_id", questionId)
+        .eq("voter_id", voterId);
 
-    if (insertResult.error) {
-      if (insertResult.error.code === "23505") {
-        const { error: updateError } = await supabase
-          .from("poll_votes")
-          .update({ option_id: optionId })
-          .eq("question_id", questionId)
-          .eq("voter_id", voterId);
+      if (deleteError) {
+        return Response.json(
+          { error: deleteError.message },
+          { status: 500 }
+        );
+      }
+    } else {
+      const insertResult = await supabase.from("poll_votes").insert({
+        question_id: questionId,
+        option_id: optionId,
+        voter_id: voterId,
+      });
 
-        if (updateError) {
+      if (insertResult.error) {
+        if (insertResult.error.code === "23505") {
+          const { error: updateError } = await supabase
+            .from("poll_votes")
+            .update({ option_id: optionId })
+            .eq("question_id", questionId)
+            .eq("voter_id", voterId);
+
+          if (updateError) {
+            return Response.json(
+              { error: updateError.message },
+              { status: 500 }
+            );
+          }
+        } else {
           return Response.json(
-            { error: updateError.message },
+            { error: insertResult.error.message },
             { status: 500 }
           );
         }
-      } else {
-        return Response.json(
-          { error: insertResult.error.message },
-          { status: 500 }
-        );
       }
     }
 
