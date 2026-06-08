@@ -6,6 +6,36 @@ type DashboardStats = {
   polls: number;
 };
 
+type Question = {
+  id: string | number;
+  title: string;
+  content: string;
+  author?: string | null;
+  votes: number;
+  createdAt?: string;
+  options?: { id: string; text: string; votes: number }[];
+};
+
+type SortOrder = "latest" | "earliest" | "popular";
+
+function sortQuestionsList(questions: Question[], sortOrder: SortOrder = "popular") {
+  return [...questions].sort((a, b) => {
+    if (sortOrder === "latest") {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime || b.votes - a.votes;
+    }
+
+    if (sortOrder === "earliest") {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return aTime - bTime || b.votes - a.votes;
+    }
+
+    return b.votes - a.votes || (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+  });
+}
+
 async function getVoteTotal(questionId: string | number) {
   const { data, error } = await supabase
     .from("votes")
@@ -88,7 +118,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
 export async function getQuestionsPage(
   offset: number,
-  limit: number
+  limit: number,
+  sortOrder: SortOrder = "popular"
 ) {
   const { data, error } = await supabase
     .from("questions")
@@ -115,7 +146,7 @@ export async function getQuestionsPage(
     })
   );
 
-  const sorted = questions.sort((a, b) => b.votes - a.votes);
+  const sorted = sortQuestionsList(questions, sortOrder);
 
   return {
     questions: sorted.slice(offset, offset + limit),
@@ -125,7 +156,9 @@ export async function getQuestionsPage(
 
 export async function searchQuestions(
   q: string,
-  limit: number
+  offset: number,
+  limit: number,
+  sortOrder: SortOrder = "popular"
 ) {
   const { data, error } = await supabase
     .from("questions")
@@ -153,6 +186,11 @@ export async function searchQuestions(
     })
   );
 
-  return questions.sort((a, b) => b.votes - a.votes).slice(0, limit);
+  const sorted = sortQuestionsList(questions, sortOrder);
+
+  return {
+    questions: sorted.slice(offset, offset + limit),
+    hasMore: sorted.length > offset + limit,
+  };
 }
 

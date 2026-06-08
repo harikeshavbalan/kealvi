@@ -7,19 +7,18 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
   const q = searchParams.get("q")?.trim();
+  const sort = (searchParams.get("sort") as "latest" | "earliest" | "popular") ?? "popular";
+  const offset = Number(searchParams.get("offset") ?? 0);
 
   if (q) {
-    const questions = await searchQuestions(q, PAGE_SIZE);
+    const { questions, hasMore } = await searchQuestions(q, offset, PAGE_SIZE, sort);
     return Response.json({
       questions,
-      hasMore: false,
+      hasMore,
     });
   }
 
-  const offset = Number(searchParams.get("offset") ?? 0);
-
-  const { questions, hasMore } =
-    await getQuestionsPage(offset, PAGE_SIZE);
+  const { questions, hasMore } = await getQuestionsPage(offset, PAGE_SIZE, sort);
 
   return Response.json({
     questions,

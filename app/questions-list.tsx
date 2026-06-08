@@ -23,6 +23,26 @@ type Question = {
   options?: PollOption[];
 };
 
+type SortOrder = "latest" | "earliest" | "popular";
+
+function sortQuestions(questions: Question[], sortOrder: SortOrder = "popular") {
+  return [...questions].sort((a, b) => {
+    if (sortOrder === "latest") {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime || b.votes - a.votes;
+    }
+
+    if (sortOrder === "earliest") {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return aTime - bTime || b.votes - a.votes;
+    }
+
+    return b.votes - a.votes || (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+  });
+}
+
 const CHARACTER_LIMIT = 250;
 const EXPAND_THRESHOLD = 280;
 
@@ -65,6 +85,7 @@ export default function QuestionsList({
   const [draft, setDraft] = useState("");
   const [optionInputs, setOptionInputs] = useState(["", ""]);
   const [query, setQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("popular");
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -89,19 +110,22 @@ export default function QuestionsList({
 
   useEffect(() => {
     const timeoutId = setTimeout(async () => {
-      const url = query
-        ? `/api/questions?q=${encodeURIComponent(query)}`
-        : `/api/questions`;
+      const params = new URLSearchParams({ sort: sortOrder });
 
+      if (query) {
+        params.set("q", query);
+      }
+
+      const url = `/api/questions?${params.toString()}`;
       const res = await fetch(url);
       const data = await res.json();
 
-      setQuestions(data.questions ?? []);
+      setQuestions(data.questions ? sortQuestions(data.questions, sortOrder) : []);
       setHasMore(data.hasMore ?? false);
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [query]);
+  }, [query, sortOrder]);
 
   useEffect(() => {
     async function loadCounts() {
@@ -219,20 +243,22 @@ export default function QuestionsList({
     }
 
     setQuestions((qs) =>
-      [
-        {
-          ...created,
-          votes: 0,
-          createdAt: created.created_at ?? created.createdAt,
-          options:
-            created.options?.map((option: { id: string; text: string }) => ({
-
-              ...option,
-              votes: 0,
-            })) ?? [],
-        },
-        ...qs,
-      ].sort((a, b) => b.votes - a.votes)
+      sortQuestions(
+        [
+          {
+            ...created,
+            votes: 0,
+            createdAt: created.created_at ?? created.createdAt,
+            options:
+              created.options?.map((option: { id: string; text: string }) => ({
+                ...option,
+                votes: 0,
+              })) ?? [],
+          },
+          ...qs,
+        ],
+        sortOrder
+      )
     );
 
     setTotalCount((c) => c + 1);
@@ -271,13 +297,14 @@ export default function QuestionsList({
 
     if (res.ok) {
       setQuestions((qs) =>
-        qs
-          .map((q) =>
+        sortQuestions(
+          qs.map((q) =>
             String(q.id) === String(id)
               ? { ...q, votes: body.votes ?? q.votes }
               : q
-          )
-          .sort((a, b) => b.votes - a.votes)
+          ),
+          sortOrder
+        )
       );
       return;
     }
@@ -313,8 +340,8 @@ export default function QuestionsList({
     }
 
     setQuestions((qs) =>
-      qs
-        .map((q) =>
+      sortQuestions(
+        qs.map((q) =>
           String(q.id) === String(questionId)
             ? {
                 ...q,
@@ -330,18 +357,28 @@ export default function QuestionsList({
                   ) ?? q.votes,
               }
             : q
-        )
-        .sort((a, b) => b.votes - a.votes)
+        ),
+        sortOrder
+      )
     );
   }
 
   async function loadMore() {
     setLoading(true);
 
-    const res = await fetch(`/api/questions?offset=${questions.length}`);
+    const params = new URLSearchParams({
+      offset: String(questions.length),
+      sort: sortOrder,
+    });
+
+    if (query) {
+      params.set("q", query);
+    }
+
+    const res = await fetch(`/api/questions?${params.toString()}`);
     const data = await res.json();
 
-    setQuestions((qs) => [...qs, ...(data.questions ?? [])]);
+    setQuestions((qs) => sortQuestions([...(qs ?? []), ...(data.questions ?? [])], sortOrder));
     setHasMore(data.hasMore ?? false);
 
     setLoading(false);
@@ -397,13 +434,14 @@ export default function QuestionsList({
 
     const updated = await res.json();
     setQuestions((prev) =>
-      prev
-        .map((item) =>
+      sortQuestions(
+        prev.map((item) =>
           String(item.id) === String(q.id)
             ? { ...item, title: updated.title ?? editTitle, content: updated.content ?? editContent }
             : item
-        )
-        .sort((a, b) => b.votes - a.votes)
+        ),
+        sortOrder
+      )
     );
 
     cancelEdit();
@@ -589,6 +627,22 @@ export default function QuestionsList({
         placeholder="Search questions..."
         className="w-full rounded-md border px-3 py-2"
       />
+
+      <div className="flex flex-wrap items-center gap-3 pt-2">
+        <label className="text-sm text-gray-600" htmlFor="sortOrder">
+          Sort by:
+        </label>
+        <select
+          id="sortOrder"
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+          className="rounded-md border px-3 py-2"
+        >
+          <option value="popular">Most popular</option>
+          <option value="latest">Latest</option>
+          <option value="earliest">Earliest</option>
+        </select>
+      </div>
 
       <ul className="space-y-3">
         {questions.map((q) => {
